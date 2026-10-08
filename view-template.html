@@ -1,0 +1,47 @@
+<!doctype html>
+<!--
+  A dependency-free MCP Apps view. Copy it, keep the protocol block, and replace render().
+  Protocol: View -> Host "ui/initialize" (request), Host -> View result, View -> Host "ui/notifications/initialized",
+  then Host -> View "ui/notifications/tool-result" with a CallToolResult. "ui/message" asks the host to send a user message.
+  Serve it as an MCP resource with mimeType "text/html;profile=mcp-app" and point a tool at it with
+  _meta: { ui: { resourceUri: "ui://your-app/view.html" }, "ui/resourceUri": "ui://your-app/view.html" }.
+-->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light dark; font: 16px/1.45 system-ui, sans-serif; }
+  :root[data-theme=dark] { color-scheme: dark; } :root[data-theme=light] { color-scheme: light; }
+  body { margin: 0; } main { padding: 16px; }
+  button { font: inherit; min-height: 48px; padding: 0 18px; border-radius: 999px; cursor: pointer; }
+</style></head>
+<body><main id="root" aria-live="polite">Waiting for a result…</main>
+<script>
+(function () {
+  // ---- MCP Apps protocol (about 30 lines, no SDK) ----
+  var seq = 0, pending = {};
+  function post(m) { window.parent.postMessage(m, '*'); }
+  function request(method, params) { var id = ++seq; post({ jsonrpc: '2.0', id: id, method: method, params: params }); return new Promise(function (r) { pending[id] = r; }); }
+  function notify(method, params) { post({ jsonrpc: '2.0', method: method, params: params || {} }); }
+  function sendUserMessage(text) { return request('ui/message', { role: 'user', content: [{ type: 'text', text: text }] }); }
+  function theme(ctx) { if (ctx && ctx.theme) document.documentElement.setAttribute('data-theme', ctx.theme); }
+  function size() { notify('ui/notifications/size-changed', { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight }); }
+  window.addEventListener('message', function (e) {
+    var m = e.data; if (!m || m.jsonrpc !== '2.0') return;
+    if (m.id != null && pending[m.id] && !m.method) { pending[m.id](m.result); delete pending[m.id]; return; }
+    if (m.method === 'ui/notifications/tool-result') { render(m.params, sendUserMessage); size(); }
+    else if (m.method === 'ui/notifications/host-context-changed') theme(m.params);
+    else if (m.method === 'ui/resource-teardown' && m.id != null) post({ jsonrpc: '2.0', id: m.id, result: {} });
+  });
+  request('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'vanilla-view', version: '1.0.0' }, appCapabilities: {} })
+    .then(function (r) { theme(r && r.hostContext); notify('ui/notifications/initialized'); size();
+      if (window.ResizeObserver) new ResizeObserver(size).observe(document.body); }); // only after the handshake
+
+  // ---- Your view: replace this ----
+  function render(result, say) {
+    var data = result && result.structuredContent;
+    var root = document.getElementById('root');
+    root.textContent = '';
+    var pre = document.createElement('pre'); pre.textContent = JSON.stringify(data, null, 2); root.appendChild(pre);
+    var b = document.createElement('button'); b.textContent = 'Tell the assistant "thanks"'; b.onclick = function () { say('Thanks!'); }; root.appendChild(b);
+  }
+})();
+</script></body></html>

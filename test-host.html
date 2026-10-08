@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- Open this file in a browser to try a view without an MCP host. It plays the host side of the protocol. -->
+<html><head><meta charset="utf-8"><title>MCP Apps test host</title>
+<style>body{font:15px system-ui;margin:24px;display:grid;gap:12px;max-width:900px}iframe{width:100%;height:360px;border:1px solid #ccc;border-radius:12px}textarea{width:100%;height:140px;font:13px monospace}</style></head>
+<body>
+<h1>MCP Apps test host</h1>
+<label>View file: <input type="file" id="file" accept=".html"></label>
+<iframe id="view" sandbox="allow-scripts"></iframe>
+<label>CallToolResult to send<textarea id="result">{"content":[{"type":"text","text":"hello"}],"structuredContent":{"hello":"world"}}</textarea></label>
+<div><button id="send">Send ui/notifications/tool-result</button> <label><input type="checkbox" id="dark"> dark theme</label></div>
+<pre id="log"></pre>
+<script>
+const view = document.getElementById('view'), log = (s) => document.getElementById('log').textContent += s + '\n';
+document.getElementById('file').onchange = async (e) => { view.srcdoc = await e.target.files[0].text(); };
+window.addEventListener('message', (e) => {
+  const m = e.data; if (!m || m.jsonrpc !== '2.0') return; log('view → host: ' + (m.method || 'result #' + m.id));
+  const theme = document.getElementById('dark').checked ? 'dark' : 'light';
+  if (m.method === 'ui/initialize') view.contentWindow.postMessage({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2026-01-26', hostInfo: { name: 'test-host', version: '1' }, hostCapabilities: {}, hostContext: { theme } } }, '*');
+  if (m.method === 'ui/message') { log('  user message: ' + m.params.content.map((c) => c.text).join(' ')); view.contentWindow.postMessage({ jsonrpc: '2.0', id: m.id, result: {} }, '*'); }
+  if (m.method === 'ui/notifications/size-changed') log('  size ' + m.params.width + '×' + m.params.height);
+});
+document.getElementById('send').onclick = () => view.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: JSON.parse(document.getElementById('result').value) }, '*');
+</script></body></html>
